@@ -32,18 +32,11 @@ BASE_URL = "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks"
 DEFAULT_MODEL = "doubao-seedance-2-0-260128"
 
 
-def get_api_key():
-    key = os.environ.get("ARK_API_KEY")
-    if not key:
-        print("Error: ARK_API_KEY environment variable is not set.", file=sys.stderr)
-        print("Set it with: export ARK_API_KEY='your-api-key-here'", file=sys.stderr)
-        sys.exit(1)
-    return key
-
-
-def api_request(method, url, data=None):
+def api_request(method, url, data=None, api_key=None):
     """Make an API request and return parsed JSON response."""
-    api_key = get_api_key()
+    if not api_key:
+        print("Error: ARK_API_KEY is required. Pass it via --api-key argument.", file=sys.stderr)
+        sys.exit(1)
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -222,13 +215,13 @@ def cmd_create(args):
     if getattr(args, 'callback_url', None):
         body["callback_url"] = args.callback_url
 
-    result = api_request("POST", BASE_URL, body)
+    result = api_request("POST", BASE_URL, body, api_key=args.api_key)
     task_id = result.get("id", "")
 
     print(json.dumps({"task_id": task_id, "status": "created", "response": result}, indent=2))
 
     if args.wait:
-        return cmd_wait_logic(task_id, args.interval or 15, args.download)
+        return cmd_wait_logic(task_id, args.interval or 15, args.download, api_key=args.api_key)
 
     return task_id
 
@@ -236,18 +229,18 @@ def cmd_create(args):
 def cmd_status(args):
     """Query task status."""
     url = f"{BASE_URL}/{args.task_id}"
-    result = api_request("GET", url)
+    result = api_request("GET", url, api_key=args.api_key)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return result
 
 
-def cmd_wait_logic(task_id, interval=15, download_dir=None):
+def cmd_wait_logic(task_id, interval=15, download_dir=None, api_key=None):
     """Wait for task completion, optionally download result."""
     url = f"{BASE_URL}/{task_id}"
     print(f"Waiting for task {task_id} to complete (polling every {interval}s)...")
 
     while True:
-        result = api_request("GET", url)
+        result = api_request("GET", url, api_key=api_key)
         status = result.get("status", "unknown")
 
         if status == "succeeded":
@@ -301,7 +294,7 @@ def cmd_wait_logic(task_id, interval=15, download_dir=None):
 
 def cmd_wait(args):
     """Wait for task completion."""
-    return cmd_wait_logic(args.task_id, args.interval, args.download)
+    return cmd_wait_logic(args.task_id, args.interval, args.download, api_key=args.api_key)
 
 
 def cmd_list(args):
@@ -318,7 +311,7 @@ def cmd_list(args):
     if params:
         url += "?" + "&".join(params)
 
-    result = api_request("GET", url)
+    result = api_request("GET", url, api_key=args.api_key)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return result
 
@@ -326,7 +319,7 @@ def cmd_list(args):
 def cmd_delete(args):
     """Cancel or delete a task."""
     url = f"{BASE_URL}/{args.task_id}"
-    api_request("DELETE", url)
+    api_request("DELETE", url, api_key=args.api_key)
     print(f"Task {args.task_id} cancelled/deleted successfully.")
 
 
@@ -342,6 +335,7 @@ def parse_bool(v):
 
 def main():
     parser = argparse.ArgumentParser(description="Seedance Video Generation CLI (Volcengine Ark)")
+    parser.add_argument("--api-key", required=True, help="ARK API key for authentication")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     p_create = subparsers.add_parser("create", help="Create a video generation task")
